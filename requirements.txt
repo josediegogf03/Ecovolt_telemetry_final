@@ -1,0 +1,11 @@
+streamlit
+pandas
+numpy
+matplotlib
+seaborn
+plotly
+ably
+supabase
+streamlit-echarts
+streamlit-raw-echarts
+streamlit-autorefresh
