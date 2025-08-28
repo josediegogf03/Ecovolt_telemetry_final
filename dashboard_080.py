@@ -110,7 +110,7 @@ def get_theme_aware_css():
         "data:image/svg+xml;base64,"
         "PHN2ZyB4bWxucz0naHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmcnIHdpZHRoPScyMDAnIGhlaWdo"
         "dD0nMjAwJz4KPGZpbHRlciBpZD0nbic+PGZlVHVyYnVsZW5jZSByZXN1bHQ9J25vaXNlJyB0eXBl"
-        "PSfmcmFjdGFsTm9pc2UnIGJhc2VGcmVxdWVuY3k9JzAuOTknIG51bU9jdGF2ZXM9JzQgJy8+PGZl"
+        "PSdmcmFjdGFsTm9pc2UnIGJhc2VGcmVxdWVuY3k9JzAuOTknIG51bU9jdGF2ZXM9JzQgJy8+PGZl"
         "Q29sb3JNYXRyaXggdHlwZT0nbWF0cml4JyB2YWx1ZXM9JzAgMCAwIDAgMCAwIDAgMCAwIDAgMCAw"
         "IDAgMCAwIDAgMCAwIDAgMC4wOTUgMCcgc3VwZXJwcmVzZXJ2YXRpdmU9J3RydWUnLz48L2ZpbHRl"
         "cj4KPHJlY3Qgd2lkdGg9JzEwMCUnIGhlaWdodD0nMTAwJScgZmlsbD0nI2ZmZicgZmlsdGVyPSd1"
@@ -128,6 +128,12 @@ def get_theme_aware_css():
           "Segoe UI Emoji", "Segoe UI Symbol";
 
   /* Core palette and adaptive tints */
+  --bg: Canvas;
+  --text: CanvasText;
+  --text-muted: color-mix(in oklab, CanvasText 60%, Canvas);
+  --text-subtle: color-mix(in oklab, CanvasText 45%, Canvas);
+
+  /* Glass variables */
   --glass-tint: color-mix(in oklab, CanvasText 10%, Canvas);
   --glass-tint-strong: color-mix(in oklab, CanvasText 15%, Canvas);
   --glass-blur: 18px;
@@ -140,9 +146,14 @@ def get_theme_aware_css():
   /* Shadows and glows */
   --shadow-1: 0 8px 24px color-mix(in oklab, CanvasText 12%, transparent);
   --shadow-2: 0 18px 48px color-mix(in oklab, CanvasText 18%, transparent);
+  --edge-glow: 0 0 0 1px color-mix(in oklab, CanvasText 18%, transparent);
 
   /* Accents */
   --accent: #2997ff;
+
+  /* Motion + performance */
+  --hover-lift: translateY(-2px) scale(1.01);
+  --active-press: translateY(0px) scale(0.998);
 
   /* Noise */
   --noise: url('{noise_svg}');
@@ -232,6 +243,7 @@ html, body {{
   text-shadow:
     0 1px 0 rgba(255,255,255,0.15),
     0 10px 30px rgba(0,0,0,0.18),
+    /* extremely subtle chromatic separation */
     0 0.4px 0 rgba(41,151,255,0.06),
     0 -0.4px 0 rgba(255,60,0,0.06);
 }}
@@ -529,7 +541,6 @@ iframe[title="streamlit_echarts.st_echarts"] {{
 </style>
 """
 
-
 def inject_interaction_js():
     # Minimal JS for subtle parallax + tilt, disabled if user prefers reduced motion
     return """
@@ -569,6 +580,7 @@ def inject_interaction_js():
         el.addEventListener('mouseleave', () => reset(el));
       });
     }
+    
   } catch (e) {}
 })();
 </script>
@@ -1142,6 +1154,7 @@ def calculate_kpis(df: pd.DataFrame) -> Dict[str, float]:
         "total_energy_kwh": 0.0,
         "avg_power_w": 0.0,
         "c_current_a": 0.0,
+        "current_power_w": 0.0,
         "efficiency_km_per_kwh": 0.0,
         "battery_voltage_v": 0.0,
         "battery_percentage": 0.0,
@@ -1204,7 +1217,16 @@ def calculate_kpis(df: pd.DataFrame) -> Dict[str, float]:
             power_data = df["power_w"].dropna()
             if not power_data.empty:
                 kpis["avg_power_w"] = max(0, float(power_data.mean()))
-
+                # expose current (most recent) and max power for gauges / UI
+                try:
+                    kpis["current_power_w"] = max(0.0, float(power_data.iloc[-1]))
+                except Exception:
+                    kpis["current_power_w"] = float(kpis["avg_power_w"])
+                try:
+                    kpis["max_power_w"] = max(0.0, float(power_data.max()))
+                except Exception:
+                    kpis["max_power_w"] = float(kpis["avg_power_w"])
+                    
         if kpis["total_energy_kwh"] > 0:
             kpis["efficiency_km_per_kwh"] = (
                 kpis["total_distance_km"] / kpis["total_energy_kwh"]
@@ -1459,12 +1481,22 @@ def render_live_gauges(kpis: Dict[str, float], unique_ns: str = "gauges"):
 
     with cols[2]:
         st.markdown(
-            '<div class="gauge-container"><div class="gauge-title">💡 Avg Power (W)</div>',
+            '<div class="gauge-container"><div class="gauge-title">💡 Power (W)</div>',
             unsafe_allow_html=True,
         )
+        # Use the most-recent measured power (current_power_w). Fall back to avg
+        current_power = kpis.get("current_power_w", kpis.get("avg_power_w", 0.0))
+        # Choose a reasonable maximum for the gauge (use observed max if present)
+        max_power = max(
+            100,
+            kpis.get("max_power_w", current_power * 1.5 if current_power > 0 else 100),
+        )
         opt = create_small_gauge_option(
-            kpis["avg_power_w"], max_val=max(1000, kpis["avg_power_w"] * 2 + 1), title="Power",
-            color_hex="#ff7f0e", suffix=""
+            current_power,
+            max_val=max_power,
+            title="Power",
+            color_hex="#ff7f0e",
+            suffix=" W",
         )
         _st_echarts_render(opt, 140, key=f"{unique_ns}_gauge_power")
         st.markdown("</div>", unsafe_allow_html=True)
@@ -2194,7 +2226,7 @@ def render_gps_map_plotly(df: pd.DataFrame):
     else:
         df_filtered = df_filtered.reset_index(drop=True)
 
-    # Altitude cleaning (keep from provided code)
+    # Altitude cleaning 
     def _clean_altitude_series(
         alt_series: pd.Series,
         timestamps: Optional[pd.Series] = None,
@@ -2478,7 +2510,14 @@ def compute_data_quality_report(df: pd.DataFrame) -> Dict[str, Any]:
                 gaps = dt[dt > 3 * dt.median()]
                 report["dropouts"] = int((gaps).sum() // report["median_dt_s"]) if not gaps.empty else 0
                 report["max_gap_s"] = float(dt.max())
-                report["span"] = str((ts.max() - ts.min())).split(".")[0]
+
+                # Format total span as H:MM:SS 
+                span_td = ts.max() - ts.min()
+                total_seconds = int(span_td.total_seconds())
+                hours = total_seconds // 3600
+                minutes = (total_seconds % 3600) // 60
+                seconds = total_seconds % 60
+                report["span"] = f"{hours}:{minutes:02d}:{seconds:02d}"
             else:
                 report["median_dt_s"] = None
                 report["hz"] = None
@@ -2519,7 +2558,7 @@ def compute_data_quality_report(df: pd.DataFrame) -> Dict[str, Any]:
 
 
 # ---------------------------
-# Dynamic Charts section (unchanged look)
+# Dynamic Charts section 
 # ---------------------------
 
 def render_dynamic_charts_section(df: pd.DataFrame):
@@ -2711,9 +2750,9 @@ def main():
         data_source_mode = st.radio(
             "📊 Data Source",
             options=["realtime_session", "historical"],
-            format_func=lambda x: "🔴 Real-time + Session Data"
+            format_func=lambda x: "🔴 Real-time"
             if x == "realtime_session"
-            else "📚 Historical Data",
+            else "📚 Historical",
             key="data_source_mode_radio",
         )
 
@@ -2728,7 +2767,7 @@ def main():
         if st.session_state.data_source_mode == "realtime_session":
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("🔌 Connect", use_container_width=True):
+                if st.button("🔌CON", use_container_width=True):
                     if st.session_state.telemetry_manager:
                         st.session_state.telemetry_manager.disconnect()
                         time.sleep(0.5)
@@ -2750,7 +2789,7 @@ def main():
                     st.rerun()
 
             with col2:
-                if st.button("🛑 Disconnect", use_container_width=True):
+                if st.button("🛑 DC", use_container_width=True):
                     if st.session_state.telemetry_manager:
                         st.session_state.telemetry_manager.disconnect()
                         st.session_state.telemetry_manager = None
