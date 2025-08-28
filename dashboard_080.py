@@ -80,8 +80,8 @@ DASHBOARD_ABLY_API_KEY = (
     "DxuYSw.fQHpug:sa4tOcqWDkYBW9ht56s7fT0G091R1fyXQc6mc8WthxQ"
 )
 DASHBOARD_CHANNEL_NAME = "telemetry-dashboard-channel"
-SUPABASE_URL = "https://rtfqlrvbmsnrkrdrknsp.supabase.co"
-SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0ZnFscnZibXNucmtyZHJrbnNwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIxMjA3NjQsImV4cCI6MjA2NzY5Njc2NH0.bz23OIWDRPJXgEvJdEof21UVDSi572IfcAdZS2C4gTU"
+SUPABASE_URL = "https://dsfmdziehhgmrconjcns.supabase.co"
+SUPABASE_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzZm1kemllaGhnbXJjb25qY25zIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5MDEyOTIsImV4cCI6MjA2NzQ3NzI5Mn0.P41bpLkP0tKpTktLx6hFOnnyrAB9N_yihQP1v6zTRwc"
 SUPABASE_TABLE_NAME = "telemetry"
 
 # Pagination constants
@@ -499,6 +499,15 @@ div[data-testid="stMetric"] [data-testid="stMetricDelta"] {{
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   box-shadow: var(--shadow-1);
+  /* Ensure sidebar content is scrollable and never overflows the viewport */
+  height: 100vh !important;
+  max-height: 100vh !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  /* Avoid content clipped behind bottom */
+  padding-bottom: 1rem;
+
 }}
 
 label, .stTextInput, .stSelectbox, .stNumberInput, .stSlider {{
@@ -1193,15 +1202,16 @@ def calculate_kpis(df: pd.DataFrame) -> Dict[str, float]:
         kpis = default_kpis.copy()
 
         if "speed_ms" in df.columns:
-            speed_data = df["speed_ms"].dropna()
+            speed_data = pd.to_numeric(df["speed_ms"], errors="coerce").dropna()
             if not speed_data.empty:
-                kpis["current_speed_ms"] = max(0, float(speed_data.iloc[-1]))
-                kpis["max_speed_ms"] = max(0, float(speed_data.max()))
-                kpis["avg_speed_ms"] = max(0, float(speed_data.mean()))
+                default_kpis["current_speed_ms"] = max(0, float(speed_data.iloc[-1]))
+                default_kpis["max_speed_ms"] = max(0, float(speed_data.max()))
+                nz_speed = speed_data[speed_data != 0]
+                default_kpis["avg_speed_ms"] = float(nz_speed.mean()) if not nz_speed.empty else 0.0
 
-        kpis["current_speed_kmh"] = kpis["current_speed_ms"] * 3.6
-        kpis["max_speed_kmh"] = kpis["max_speed_ms"] * 3.6
-        kpis["avg_speed_kmh"] = kpis["avg_speed_ms"] * 3.6
+        default_kpis["current_speed_kmh"] = default_kpis["current_speed_ms"] * 3.6
+        default_kpis["max_speed_kmh"] = default_kpis["max_speed_ms"] * 3.6
+        default_kpis["avg_speed_kmh"] = default_kpis["avg_speed_ms"] * 3.6
 
         if "distance_m" in df.columns and not df["distance_m"].dropna().empty:
             kpis["total_distance_km"] = max(
@@ -1214,18 +1224,12 @@ def calculate_kpis(df: pd.DataFrame) -> Dict[str, float]:
             )
 
         if "power_w" in df.columns:
-            power_data = df["power_w"].dropna()
+            power_data = pd.to_numeric(df["power_w"], errors="coerce").dropna()
             if not power_data.empty:
-                kpis["avg_power_w"] = max(0, float(power_data.mean()))
-                # expose current (most recent) and max power for gauges / UI
-                try:
-                    kpis["current_power_w"] = max(0.0, float(power_data.iloc[-1]))
-                except Exception:
-                    kpis["current_power_w"] = float(kpis["avg_power_w"])
-                try:
-                    kpis["max_power_w"] = max(0.0, float(power_data.max()))
-                except Exception:
-                    kpis["max_power_w"] = float(kpis["avg_power_w"])
+                nz_power = power_data[power_data != 0]
+                default_kpis["avg_power_w"] = float(nz_power.mean()) if not nz_power.empty else 0.0
+                default_kpis["current_power_w"] = float(power_data.iloc[-1])
+                default_kpis["max_power_w"] = float(power_data.max())
                     
         if kpis["total_energy_kwh"] > 0:
             kpis["efficiency_km_per_kwh"] = (
@@ -1253,12 +1257,11 @@ def calculate_kpis(df: pd.DataFrame) -> Dict[str, float]:
                 )
 
         if "current_a" in df.columns:
-            curr_data = df["current_a"].dropna()
+            curr_data = pd.to_numeric(df["current_a"], errors="coerce").dropna()
             if not curr_data.empty:
-                kpis["avg_current_a"] = max(0.0, float(curr_data.mean()))
-                kpis["c_current_a"] = max(0.0, float(curr_data.iloc[-1]))
-            else:
-                kpis["c_current_a"] = 0.0
+                nz_curr = curr_data[curr_data != 0]
+                default_kpis["avg_current_a"] = float(nz_curr.mean()) if not nz_curr.empty else 0.0
+                default_kpis["c_current_a"] = float(curr_data.iloc[-1])
 
         if "roll_deg" in df.columns:
             roll_data = df["roll_deg"].dropna()
@@ -1557,10 +1560,10 @@ def render_kpi_header(kpis: Dict[str, float], unique_ns: str = "kpiheader", show
 
     with col1:
         st.metric("📏 Distance", f"{kpis['total_distance_km']:.2f} km")
-        st.metric("🏃 Max Speed", f"{kpis['max_speed_kmh']:.1f} km/h")
+        st.metric("🏃 Max Speed", f"{kpis['max_speed_kmh']:.2f} km/h")
 
     with col2:
-        st.metric("⚡ Avg Speed", f"{kpis['avg_speed_kmh']:.1f} km/h")
+        st.metric("⚡ Avg Speed", f"{kpis['avg_speed_kmh']:.2f} km/h")
         st.metric("🔋 Energy", f"{kpis['total_energy_kwh']:.2f} kWh")
 
     with col3:
@@ -1619,47 +1622,71 @@ def create_speed_chart_option(df: pd.DataFrame) -> Dict[str, Any]:
     return _add_datazoom(opt, x_indices=[0])
 
 def create_power_chart_option(df: pd.DataFrame) -> Dict[str, Any]:
-    need = {"voltage_v", "current_a", "power_w"}
-    if df.empty or not need.issubset(df.columns):
+    # Show voltage and current in separate charts
+    if df.empty or (("voltage_v" not in df.columns) and ("current_a" not in df.columns)):
         return {"title": {"text": "No power data available"}, "animation": True}
 
     ts = _ts_to_iso_list(df["timestamp"])
-    volt = [ _num_or_none(v) for v in pd.to_numeric(df["voltage_v"], errors="coerce") ]
-    curr = [ _num_or_none(v) for v in pd.to_numeric(df["current_a"], errors="coerce") ]
-    pwr  = [ _num_or_none(v) for v in pd.to_numeric(df["power_w"], errors="coerce") ]
 
-    src_top = [[t, v, c] for t, v, c in zip(ts, volt, curr)]
-    src_bot = [[t, w] for t, w in zip(ts, pwr)]
+    volt = (
+        [None] * len(df)
+        if "voltage_v" not in df.columns
+        else [ _num_or_none(v) for v in pd.to_numeric(df["voltage_v"], errors="coerce") ]
+    )
+    curr = (
+        [None] * len(df)
+        if "current_a" not in df.columns
+        else [ _num_or_none(v) for v in pd.to_numeric(df["current_a"], errors="coerce") ]
+    )
+
+    src_volt = [[t, v] for t, v in zip(ts, volt)]
+    src_curr = [[t, c] for t, c in zip(ts, curr)]
 
     opt = {
-        "title": {"text": "⚡ Electrical System Performance", "left": "center", "top": 6},
+        "title": {"text": "⚡ Electrical System: Voltage & Current", "left": "center", "top": 6},
         "tooltip": {"trigger": "axis"},
         "legend": {"top": 28},
         "grid": [
-            {"left": "6%", "right": "4%", "top": 60, "height": 180, "containLabel": True},
-            {"left": "6%", "right": "4%", "top": 280, "height": 180, "containLabel": True},
+            {"left": "6%", "right": "4%", "top": 60, "height": 200, "containLabel": True},
+            {"left": "6%", "right": "4%", "top": 300, "height": 200, "containLabel": True},
         ],
         "xAxis": [{"type": "time", "gridIndex": 0}, {"type": "time", "gridIndex": 1}],
         "yAxis": [
-            {"type": "value", "gridIndex": 0, "name": "V / A"},
-            {"type": "value", "gridIndex": 1, "name": "W"},
+            {"type": "value", "gridIndex": 0, "name": "Voltage (V)"},
+            {"type": "value", "gridIndex": 1, "name": "Current (A)"},
         ],
-        "dataset": [{"id": "top", "source": src_top}, {"id": "bot", "source": src_bot}],
+        "dataset": [{"id": "volt", "source": src_volt}, {"id": "curr", "source": src_curr}],
         "series": [
-            {"type": "line", "datasetId": "top", "name": "Voltage (V)", "encode": {"x": 0, "y": 1},
-             "showSymbol": False, "lineStyle": {"width": 2, "color": "#2ca02c"},
-             "sampling": "lttb", "xAxisIndex": 0, "yAxisIndex": 0, "smooth": True},
-            {"type": "line", "datasetId": "top", "name": "Current (A)", "encode": {"x": 0, "y": 2},
-             "showSymbol": False, "lineStyle": {"width": 2, "color": "#d62728"},
-             "sampling": "lttb", "xAxisIndex": 0, "yAxisIndex": 0, "smooth": True},
-            {"type": "line", "datasetId": "bot", "name": "Power (W)", "encode": {"x": 0, "y": 1},
-             "showSymbol": False, "lineStyle": {"width": 2, "color": "#ff7f0e"},
-             "sampling": "lttb", "xAxisIndex": 1, "yAxisIndex": 1, "smooth": True},
+            {
+                "type": "line",
+                "datasetId": "volt",
+                "name": "Voltage (V)",
+                "encode": {"x": 0, "y": 1},
+                "showSymbol": False,
+                "lineStyle": {"width": 2, "color": "#2ca02c"},
+                "sampling": "lttb",
+                "xAxisIndex": 0,
+                "yAxisIndex": 0,
+                "smooth": True,
+            },
+            {
+                "type": "line",
+                "datasetId": "curr",
+                "name": "Current (A)",
+                "encode": {"x": 0, "y": 1},
+                "showSymbol": False,
+                "lineStyle": {"width": 2, "color": "#d62728"},
+                "sampling": "lttb",
+                "xAxisIndex": 1,
+                "yAxisIndex": 1,
+                "smooth": True,
+            },
         ],
+        "axisPointer": {"link": [{"xAxisIndex": "all"}]},
         "animation": True,
         "useDirtyRect": True,
     }
-    return _add_datazoom(opt, x_indices=[0,1])
+    return _add_datazoom(opt, x_indices=[0, 1])
 
 def create_imu_chart_option(df: pd.DataFrame) -> Dict[str, Any]:
     need = {"gyro_x", "gyro_y", "gyro_z", "accel_x", "accel_y", "accel_z"}
@@ -2169,9 +2196,7 @@ def render_gps_map_plotly(df: pd.DataFrame):
     )
     time_col = _find_col(df, ["timestamp", "time", "ts", "time_utc", "created_at", "datetime", "date"])
 
-    if not lat_col or not lon_col:
-        st.info("No GPS coordinate columns found (lat/lon)")
-        return
+    # We'll render altitude even if lat/lon are missing, and vice versa.
 
     # Normalize working DataFrame
     dfw = df.copy()
@@ -2197,34 +2222,63 @@ def render_gps_map_plotly(df: pd.DataFrame):
     if "power_w" in dfw.columns:
         dfw["power_w"] = pd.to_numeric(dfw["power_w"], errors="coerce")
 
-    # Filtering logic (keep from provided code)
-    initial_count = len(dfw)
-    valid_mask = (
-        (~dfw["latitude"].isna())
-        & (~dfw["longitude"].isna())
-        & (dfw["latitude"].abs() <= 90)
-        & (dfw["longitude"].abs() <= 180)
-    )
-    near_zero_mask = (dfw["latitude"].abs() < 1e-6) & (dfw["longitude"].abs() < 1e-6)
-    valid_mask = valid_mask & (~near_zero_mask)
-
-    df_filtered = dfw.loc[valid_mask].copy()
-    filtered_count = len(df_filtered)
-
-    if initial_count > 0 and filtered_count < initial_count:
-        st.warning(
-            f"🛰️ GPS Signal Issue: Excluded {initial_count - filtered_count:,} rows with invalid or out-of-range coordinates."
+    # Filtering for map (lat/lon) and altitude handled independently
+    df_map = pd.DataFrame()
+    filtered_out = 0
+    if lat_col and lon_col:
+        initial_count = len(dfw)
+        valid_mask = (
+            (~dfw["latitude"].isna())
+            & (~dfw["longitude"].isna())
+            & (dfw["latitude"].abs() <= 90)
+            & (dfw["longitude"].abs() <= 180)
         )
+        near_zero_mask = (dfw["latitude"].abs() < 1e-6) & (
+            dfw["longitude"].abs() < 1e-6
+        )
+        valid_mask = valid_mask & (~near_zero_mask)
+        df_map = dfw.loc[valid_mask].copy()
+        filtered_out = initial_count - len(df_map)
 
-    if df_filtered.empty:
-        st.info("No valid GPS coordinates found after filtering")
-        return
+        # Sort by timestamp for proper sequencing
+        if (
+            "timestamp" in df_map.columns
+            and not df_map["timestamp"].isna().all()
+        ):
+            df_map = df_map.sort_values("timestamp").reset_index(drop=True)
+        else:
+            df_map = df_map.reset_index(drop=True)
 
-    # Sort by timestamp for proper sequencing
-    if "timestamp" in df_filtered.columns and not df_filtered["timestamp"].isna().all():
-        df_filtered = df_filtered.sort_values("timestamp").reset_index(drop=True)
-    else:
-        df_filtered = df_filtered.reset_index(drop=True)
+        # Optional: drop unrealistic jumps (simple speed threshold)
+        try:
+            if "timestamp" in df_map.columns and len(df_map) > 3:
+                lat_rad = np.radians(df_map["latitude"].to_numpy())
+                lon_rad = np.radians(df_map["longitude"].to_numpy())
+                dlat = np.diff(lat_rad)
+                dlon = np.diff(lon_rad)
+                a = (
+                    np.sin(dlat / 2) ** 2
+                    + np.cos(lat_rad[:-1])
+                    * np.cos(lat_rad[1:])
+                    * np.sin(dlon / 2) ** 2
+                )
+                c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+                R = 6371000.0  # Earth radius in meters
+                dist = R * c  # meters
+                ts = df_map["timestamp"].astype("int64").to_numpy() // 1_000_000_000
+                dt = np.diff(ts).astype(float)
+                dt[dt <= 0] = np.nan
+                spd = dist / dt  # m/s
+                # Keep first point by default; mark points with insane speeds as invalid
+                speed_ok = np.insert(spd <= 65.0, 0, True)  # ~234 km/h cap
+                df_map = df_map.loc[speed_ok].reset_index(drop=True)
+        except Exception:
+            pass
+
+        if filtered_out > 0:
+            st.warning(
+                f"🛰️ GPS Signal Issue: Excluded {filtered_out:,} rows with invalid or out-of-range coordinates."
+            )
 
     # Altitude cleaning 
     def _clean_altitude_series(
@@ -2334,10 +2388,21 @@ def render_gps_map_plotly(df: pd.DataFrame):
         s_final = pd.to_numeric(s_final, errors="coerce")
         return s_final
 
-    initial_alt_rows = df_filtered["altitude"].dropna().shape[0]
+    # Altitude: compute independently of map validity so it shows even if lat/lon are bad
+    df_alt = dfw.copy()
+    if "timestamp" in df_alt.columns and not df_alt["timestamp"].isna().all():
+        df_alt = df_alt.sort_values("timestamp").reset_index(drop=True)
+    else:
+        df_alt = df_alt.reset_index(drop=True)
+
+    initial_alt_rows = (
+        df_alt["altitude"].dropna().shape[0] if "altitude" in df_alt.columns else 0
+    )
     altitude_clean = _clean_altitude_series(
-        df_filtered["altitude"],
-        timestamps=df_filtered["timestamp"] if "timestamp" in df_filtered.columns else None,
+        df_alt["altitude"] if "altitude" in df_alt.columns else pd.Series(dtype=float),
+        timestamps=df_alt["timestamp"]
+        if "timestamp" in df_alt.columns
+        else None,
         abs_min=-500.0,
         abs_max=10000.0,
         iqr_multiplier=3.0,
@@ -2349,12 +2414,17 @@ def render_gps_map_plotly(df: pd.DataFrame):
     )
     final_alt_rows = altitude_clean.dropna().shape[0]
     if initial_alt_rows > final_alt_rows:
-        st.warning(f"⛰️ Altitude Cleanup: removed {initial_alt_rows - final_alt_rows:,} points.")
+        st.warning(
+            f"⛰️ Altitude Cleanup: removed {initial_alt_rows - final_alt_rows:,} points."
+        )
 
     # Auto-zoom center & zoom based on filtered coordinates
-    lats = df_filtered["latitude"].to_numpy(dtype=float)
-    lons = df_filtered["longitude"].to_numpy(dtype=float)
-    center, zoom = _compute_center_zoom(lats, lons)
+    if not df_map.empty:
+        lats = df_map["latitude"].to_numpy(dtype=float)
+        lons = df_map["longitude"].to_numpy(dtype=float)
+        center, zoom = _compute_center_zoom(lats, lons)
+    else:
+        center, zoom = ({"lat": 0.0, "lon": 0.0}, 1.5)
 
     # Build subplot: left map (mapbox) + right altitude time series
     fig = make_subplots(
@@ -2367,19 +2437,33 @@ def render_gps_map_plotly(df: pd.DataFrame):
     )
 
     # Prepare hover customdata: [timestamp_str, speed_ms, current_a, power_w]
-    if "timestamp" in df_filtered.columns:
-        ts_strings = df_filtered["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S").astype(str)
+    if not df_map.empty and "timestamp" in df_map.columns:
+        ts_strings = (
+            df_map["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S").astype(str)
+        )
     else:
-        ts_strings = pd.Series([""] * len(df_filtered), index=df_filtered.index)
+        ts_strings = pd.Series([], dtype=str)
 
-    speed_col = df_filtered["speed_ms"] if "speed_ms" in df_filtered.columns else pd.Series([np.nan] * len(df_filtered))
-    curr_col = df_filtered["current_a"] if "current_a" in df_filtered.columns else pd.Series([np.nan] * len(df_filtered))
-    power_col = df_filtered["power_w"] if "power_w" in df_filtered.columns else pd.Series([np.nan] * len(df_filtered))
-
-    customdata = np.stack(
-        [ts_strings.values, speed_col.values, curr_col.values, power_col.values],
-        axis=-1,
-    )
+    if not df_map.empty:
+        speed_col = (
+            df_map["speed_ms"]
+            if "speed_ms" in df_map.columns
+            else pd.Series([np.nan] * len(df_map))
+        )
+        curr_col = (
+            df_map["current_a"]
+            if "current_a" in df_map.columns
+            else pd.Series([np.nan] * len(df_map))
+        )
+        power_col = (
+            df_map["power_w"]
+            if "power_w" in df_map.columns
+            else pd.Series([np.nan] * len(df_map))
+        )
+        customdata = np.stack(
+            [ts_strings.values, speed_col.values, curr_col.values, power_col.values],
+            axis=-1,
+        )
     hovertemplate = (
         "Time: %{customdata[0]}<br>"
         "Speed: %{customdata[1]:.2f} m/s<br>"
@@ -2388,10 +2472,10 @@ def render_gps_map_plotly(df: pd.DataFrame):
     )
 
     # Color by power if available
-    if "power_w" in df_filtered.columns and not df_filtered["power_w"].isna().all():
+    if not df_map.empty and "power_w" in df_map.columns and not df_map["power_w"].isna().all():
         marker = go.scattermapbox.Marker(
             size=8,
-            color=df_filtered["power_w"],
+            color=df_map["power_w"],
             colorscale="Plasma",
             showscale=True,
             colorbar=dict(title="Power (W)", x=0.55),
@@ -2400,29 +2484,47 @@ def render_gps_map_plotly(df: pd.DataFrame):
         marker = go.scattermapbox.Marker(size=8, color="#1f77b4")
 
     # Add map trace (markers+lines)
-    fig.add_trace(
-        go.Scattermapbox(
-            lat=df_filtered["latitude"],
-            lon=df_filtered["longitude"],
-            mode="markers+lines",
-            marker=marker,
-            line=dict(width=2, color="#1f77b4"),
-            customdata=customdata,
-            hovertemplate=hovertemplate,
-            name="Track",
-        ),
-        row=1,
-        col=1,
-    )
+    if not df_map.empty:
+        fig.add_trace(
+            go.Scattermapbox(
+                lat=df_map["latitude"],
+                lon=df_map["longitude"],
+                mode="markers+lines",
+                marker=marker,
+                line=dict(width=2, color="#1f77b4"),
+                customdata=customdata,
+                hovertemplate=hovertemplate,
+                name="Track",
+            ),
+            row=1,
+            col=1,
+        )
+    else:
+        # Placeholder informative text on the map panel
+        fig.add_trace(
+            go.Scattermapbox(
+                lat=[],
+                lon=[],
+                mode="markers",
+                name="No GPS",
+                hoverinfo="none",
+            ),
+            row=1,
+            col=1,
+        )
 
     # Altitude panel (cleaned preferred, fallback raw, else placeholder)
-    x_axis = df_filtered["timestamp"] if "timestamp" in df_filtered.columns else df_filtered.index
+    x_axis_alt = (
+        df_alt["timestamp"]
+        if "timestamp" in df_alt.columns
+        else df_alt.index
+    )
 
     if final_alt_rows > 0:
-        y_vals = altitude_clean.reindex(df_filtered.index)
+        y_vals = altitude_clean
         fig.add_trace(
             go.Scatter(
-                x=x_axis,
+                x=x_axis_alt,
                 y=y_vals,
                 mode="lines",
                 line=dict(color="#2ca02c", width=2),
@@ -2435,12 +2537,12 @@ def render_gps_map_plotly(df: pd.DataFrame):
         fig.update_yaxes(title_text="Altitude (m)", row=1, col=2)
         fig.update_xaxes(title_text="Time", row=1, col=2)
     else:
-        raw_alt = df_filtered["altitude"].reindex(df_filtered.index)
+        raw_alt = df_alt["altitude"] if "altitude" in df_alt.columns else pd.Series([], dtype=float)
         if raw_alt.dropna().any():
             st.warning("⛰️ Altitude cleaning removed all values — showing raw altitude as fallback.")
             fig.add_trace(
                 go.Scatter(
-                    x=x_axis,
+                    x=x_axis_alt,
                     y=raw_alt,
                     mode="lines",
                     line=dict(color="#ff7f0e", width=2, dash="dash"),
@@ -2454,9 +2556,9 @@ def render_gps_map_plotly(df: pd.DataFrame):
             fig.update_xaxes(title_text="Time", row=1, col=2)
         else:
             last_valid = None
-            if df_filtered["altitude"].dropna().any():
+            if "altitude" in df_alt.columns and df_alt["altitude"].dropna().any():
                 try:
-                    last_valid = float(df_filtered["altitude"].dropna().iloc[-1])
+                    last_valid = float(df_alt["altitude"].dropna().iloc[-1])
                 except Exception:
                     last_valid = None
 
