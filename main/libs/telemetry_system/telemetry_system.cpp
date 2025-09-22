@@ -81,10 +81,10 @@ void TelemetrySystem::run() {
         telemetry.data.total_acceleration = total_acceleration;
         telemetry.data.vehicle_heading = vehicle_heading;
         
-        telemetry.data.voltage_v = voltage;
-        telemetry.data.current_a = current;
-        telemetry.data.power_w = power;
-        telemetry.data.energy_j = cumulative_energy;
+        telemetry.data.voltage_v = fabsf(voltage);
+        telemetry.data.current_a = fabsf(current);
+        telemetry.data.power_w = fabsf(power);
+        telemetry.data.energy_j = fabsf(cumulative_energy);
         telemetry.data.distance_m = cumulative_distance;
 
         if (mqtt_client.publish(telemetry)) {
